@@ -1,0 +1,44 @@
+[
+  {
+    "hwModel": 1,
+    "hwModelSlug": "TLORA_V2",
+    "platformioTarget": "tlora-v2",
+    "architecture": "esp32",
+    "activelySupported": true,
+    "displayName": "TTGO LoRa V2",
+    "tags": ["esp32"],
+    "supportLevel": 1,
+    "images": [],
+    "hasMui": false
+  },
+  {
+    "hwModel": 2,
+    "hwModelSlug": "TBEAM",
+    "platformioTarget": "tbeam",
+    "architecture": "esp32",
+    "activelySupported": true,
+    "displayName": "TTGO T-Beam",
+    "tags": ["esp32", "gps"],
+    "supportLevel": 1,
+    "images": [],
+    "hasMui": false
+  },
+  {
+    "hwModel": 3,
+    "hwModelSlug": "HELTEC_V3",
+    "platformioTarget": "heltec-v3",
+    "architecture": "esp32-s3",
+    "activelySupported": true,
+    "supportLevel": 1,
+    "displayName": "Heltec V3",
+    "tags": [
+      "Heltec"
+    ],
+    "images": [
+      "heltec-v3.svg",
+      "heltec-v3-case.svg"
+    ],
+    "partitionScheme": "8MB"
+  }
+
+]

@@ -1,0 +1,44 @@
+{
+  "stable": [
+    {
+      "id": "v1.0.0",
+      "title": "Custom Firmware 1.0.0 - Stable Release",
+      "page_url": "https://example.com/releases/v1.0.0",
+      "zip_url": "https://example.com/firmware/releases/custom-firmware-1.0.0.zip",
+      "created_at": "2024-01-15T10:00:00Z"
+    },
+    {
+      "id": "v1.0.1",
+      "title": "Custom Firmware 1.0.1 - Bugfix Release",
+      "page_url": "https://example.com/releases/v1.0.1",
+      "zip_url": "https://example.com/firmware/releases/custom-firmware-1.0.1.zip",
+      "created_at": "2024-02-01T14:30:00Z"
+    },
+    {
+      "id": "v1.1.0",
+      "title": "Custom Firmware 1.1.0 - Feature Update",
+      "page_url": "https://example.com/releases/v1.1.0",
+      "zip_url": "https://example.com/firmware/releases/custom-firmware-1.1.0.zip",
+      "created_at": "2024-03-10T09:15:00Z"
+    }
+  ],
+  "alpha": [
+    {
+      "id": "v2.7.0",
+      "title": "Custom Firmware 2.7.0 Alpha 1",
+      "page_url": "https://flasher.schwarzes-seelenreich.de/releases/v1.2.0-alpha.1",
+      "zip_url": "https://flasher.schwarzes-seelenreich.de/backend/firmware/heltec-v3/firmware-heltec-v3-factory.bin",
+      "created_at": "2024-03-25T16:00:00Z"
+    }
+  ],
+  "previews": [
+    {
+      "id": "v2.0.0-preview",
+      "title": "Custom Firmware 2.0.0 Preview - Breaking Changes",
+      "page_url": "https://example.com/releases/v2.0.0-preview",
+      "zip_url": "https://example.com/firmware/previews/custom-firmware-2.0.0-preview.zip",
+      "created_at": "2024-04-01T12:00:00Z"
+    }
+  ],
+  "pullRequests": []
+}

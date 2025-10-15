@@ -1,0 +1,45 @@
+{
+  "name": "MyMesh Custom Firmware",
+  "version": "1.0.0",
+  "homepage": "https://deinserver.de",
+  "builds": [
+    {
+      "name": "MyMesh ESP32 T-Beam",
+      "chipFamily": "ESP32",
+      "version": "1.0.0",
+      "url": "https://deinserver.de/firmware/mymesh-tbeam-shortslow.bin",
+      "releaseNotes": "Custom Meshtastic firmware with Short/Slow preset and predefined channel list.",
+      "files": [
+        {
+          "address": 4096,
+          "path": "mymesh-tbeam-shortslow.bin"
+        }
+      ]
+    },
+    {
+      "name": "MyMesh ESP32 T-Deck",
+      "chipFamily": "ESP32",
+      "version": "1.0.0",
+      "url": "https://deinserver.de/firmware/mymesh-tdeck-shortslow.bin",
+      "files": [
+        {
+          "address": 4096,
+          "path": "mymesh-tdeck-shortslow.bin"
+        }
+      ]
+    },
+    {
+      "name": "MyMesh nRF52 T-Echo",
+      "chipFamily": "NRF52",
+      "version": "1.0.0",
+      "url": "https://deinserver.de/firmware/mymesh-techo-shortslow.zip",
+      "releaseNotes": "nRF52 firmware package (.zip) for T-Echo boards",
+      "files": [
+        {
+          "path": "mymesh-techo-shortslow.zip"
+        }
+      ]
+    }
+  ]
+}
+
