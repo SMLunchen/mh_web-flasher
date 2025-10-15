@@ -90,8 +90,19 @@ export const useFirmwareStore = defineStore('firmware', {
     hasOnlineFirmware: (state) => (state.selectedFirmware?.id || '').length > 0,
     hasFirmwareFile: (state) => (state.selectedFile?.name || '').length > 0,
     percentDone: (state) => `${state.flashPercentDone}%`,
-    firmwareVersion: (state) => state.selectedFirmware?.id ? state.selectedFirmware.id.replace('v', '') : '.+',
-    canShowFlash: (state) => state.selectedFirmware?.id ? state.hasSeenReleaseNotes : true, 
+    firmwareVersion: (state) => state.selectedFirmware?.id ? state.selectedFirmware.id.replace(/^v/, '') : '.+',
+    //canShowFlash: (state) => state.selectedFirmware?.id ? state.hasSeenReleaseNotes : true, 
+    canShowFlash: (state) => {
+    if (!state.selectedFirmware?.id) return true;
+
+    // Für Custom Firmware mit bin_urls: Release Notes nicht erforderlich
+    if (state.selectedFirmware?.bin_urls) {
+        return true;
+    }
+
+    // Für normale Meshtastic Firmware: Release Notes erforderlich
+    return state.hasSeenReleaseNotes;
+},
     isZipFile: (state) => state.selectedFile?.name.endsWith('.zip'),
     isFactoryBin: (state) => state.selectedFile?.name.endsWith('.factory.bin'),
     deviceSpecificFirmware: (state) => {
@@ -111,38 +122,50 @@ export const useFirmwareStore = defineStore('firmware', {
     continueToFlash() {
       this.hasSeenReleaseNotes = true
     },
-    setCurrentDevice(deviceSlug: string) {
-      this.currentDeviceSlug = deviceSlug;
-      
-      if (Object.keys(this.deviceFirmwareMapping).length === 0) {
-        this.loadDeviceFirmwareMapping();
-      }
-      
-      const deviceFirmware = this.deviceFirmwareMapping[deviceSlug] || 
-                             DEVICE_SPECIFIC_FIRMWARE[deviceSlug] || [];
-      
-      if (USE_CUSTOM_FIRMWARE && deviceFirmware.length > 0) {
-        console.log(`Loading ${deviceFirmware.length} firmware versions for ${deviceSlug}`);
-        this.stable = deviceFirmware;
-        this.alpha = [];
-        this.previews = [];
-        this.pullRequests = [];
-      } else {
-        this.fetchList();
-      }
-    },
-    async loadDeviceFirmwareMapping() {
-      try {
-        const response = await fetch(DEVICE_FIRMWARE_MAPPING_PATH);
-        if (response.ok) {
-          this.deviceFirmwareMapping = await response.json();
-          console.log('Successfully loaded device firmware mapping');
-        }
-      } catch (error) {
-        console.warn('Could not load device firmware mapping:', error);
-        this.deviceFirmwareMapping = DEVICE_SPECIFIC_FIRMWARE;
-      }
-    },
+  setCurrentDevice(deviceSlug: string) {
+  console.log(`[DEBUG] setCurrentDevice called with: ${deviceSlug}`);
+  this.currentDeviceSlug = deviceSlug;
+  
+  if (Object.keys(this.deviceFirmwareMapping).length === 0) {
+    console.log('[DEBUG] Loading device firmware mapping...');
+    this.loadDeviceFirmwareMapping();
+  }
+  
+  const deviceFirmware = this.deviceFirmwareMapping[deviceSlug] ||
+                         DEVICE_SPECIFIC_FIRMWARE[deviceSlug] || [];
+  
+  console.log(`[DEBUG] Found ${deviceFirmware.length} firmware entries for ${deviceSlug}`);
+  console.log('[DEBUG] Firmware entries:', deviceFirmware);
+  
+  if (USE_CUSTOM_FIRMWARE && deviceFirmware.length > 0) {
+    console.log(`Loading ${deviceFirmware.length} firmware versions for ${deviceSlug}`);
+    this.stable = deviceFirmware;
+    this.alpha = [];
+    this.previews = [];
+    this.pullRequests = [];
+  } else {
+    console.log(`[DEBUG] No custom firmware found for ${deviceSlug}, falling back to fetchList`);
+    this.fetchList();
+  }
+},
+
+async loadDeviceFirmwareMapping() {
+  try {
+    console.log(`[DEBUG] Fetching from: ${DEVICE_FIRMWARE_MAPPING_PATH}`);
+    const response = await fetch(DEVICE_FIRMWARE_MAPPING_PATH);
+    if (response.ok) {
+      this.deviceFirmwareMapping = await response.json();
+      console.log('[DEBUG] Successfully loaded device firmware mapping:');
+      console.log('[DEBUG] Available devices:', Object.keys(this.deviceFirmwareMapping));
+      console.log('[DEBUG] Full mapping:', this.deviceFirmwareMapping);
+    } else {
+      console.error(`[DEBUG] HTTP ${response.status}: ${response.statusText}`);
+    }
+  } catch (error) {
+    console.warn('[DEBUG] Could not load device firmware mapping:', error);
+    this.deviceFirmwareMapping = DEVICE_SPECIFIC_FIRMWARE;
+  }
+},  
     async fetchList() {
       if (USE_CUSTOM_FIRMWARE && this.currentDeviceSlug && this.deviceSpecificFirmware.length > 0) {
         console.log('Using device-specific firmware, skipping fetchList');
@@ -192,28 +215,43 @@ export const useFirmwareStore = defineStore('firmware', {
       // Nur Console-Log, KEIN Tracking
       console.log('Selected firmware:', firmware.id);
     },
-    getReleaseFileUrl(fileName: string): string {
-      // Prüfe zuerst ob direkte BIN-URLs vorhanden sind
-      if (this.selectedFirmware?.bin_urls) {
-        if (fileName.includes('update.bin') && this.selectedFirmware.bin_urls.update) {
-          return this.selectedFirmware.bin_urls.update;
-        }
-        if (fileName.includes('factory.bin') && this.selectedFirmware.bin_urls.factory) {
-          return this.selectedFirmware.bin_urls.factory;
-        }
-        if (fileName.includes('ota.bin') && this.selectedFirmware.bin_urls.ota) {
-          return this.selectedFirmware.bin_urls.ota;
-        }
-        if (fileName.includes('littlefs') && this.selectedFirmware.bin_urls.littlefs) {
-          return this.selectedFirmware.bin_urls.littlefs;
-        }
-      }
-      
-      // Fallback zu ZIP
-      if (!this.selectedFirmware?.zip_url) return '';
-      const baseUrl = getCorsFriendyReleaseUrl(this.selectedFirmware.zip_url);
-      return `${baseUrl}/${fileName}`;
-    },
+   getReleaseFileUrl(fileName: string): string {
+  console.log(`[DEBUG] getReleaseFileUrl called with fileName: ${fileName}`);
+  console.log(`[DEBUG] selectedFirmware:`, this.selectedFirmware);
+  
+  // Prüfe zuerst ob direkte BIN-URLs vorhanden sind
+  if (this.selectedFirmware?.bin_urls) {
+    console.log(`[DEBUG] Available bin_urls:`, this.selectedFirmware.bin_urls);
+    
+    if (fileName.includes('update') && this.selectedFirmware.bin_urls.update) {
+      console.log(`[DEBUG] Using update URL: ${this.selectedFirmware.bin_urls.update}`);
+      return this.selectedFirmware.bin_urls.update;
+    }
+    if (fileName.includes('factory') && this.selectedFirmware.bin_urls.factory) {
+      console.log(`[DEBUG] Using factory URL: ${this.selectedFirmware.bin_urls.factory}`);
+      return this.selectedFirmware.bin_urls.factory;
+    }
+    if (fileName.includes('ota') && this.selectedFirmware.bin_urls.ota) {
+      console.log(`[DEBUG] Using ota URL: ${this.selectedFirmware.bin_urls.ota}`);
+      return this.selectedFirmware.bin_urls.ota;
+    }
+    if (fileName.includes('littlefs') && this.selectedFirmware.bin_urls.littlefs) {
+      console.log(`[DEBUG] Using littlefs URL: ${this.selectedFirmware.bin_urls.littlefs}`);
+      return this.selectedFirmware.bin_urls.littlefs;
+    }
+  }
+  
+  // Fallback zu ZIP
+  if (!this.selectedFirmware?.zip_url) {
+    console.log(`[DEBUG] No zip_url available`);
+    return '';
+  }
+  
+  const baseUrl = getCorsFriendyReleaseUrl(this.selectedFirmware.zip_url);
+  const fullUrl = `${baseUrl}/${fileName}`;
+  console.log(`[DEBUG] Using ZIP fallback URL: ${fullUrl}`);
+  return fullUrl;
+  }, 
     async downloadUf2FileSystem(searchRegex: RegExp) {
       // Prüfe ob direkte UF2-URL vorhanden ist
       if (this.selectedFirmware?.uf2_urls) {

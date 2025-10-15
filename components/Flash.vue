@@ -55,15 +55,23 @@ const preflightCheck = async () => {
         fileExistsOnServer.value = false;
         return;
     }
-
+    
     if (['nrf52840', 'rp2040'].includes(deviceStore.selectedArchitecture)) {
-        const firmwareVersion = firmwareStore.selectedFirmware!.id.replace('v', '')
+        const firmwareVersion = firmwareStore.selectedFirmware!.id.replace(/^v/, '') // Nur am Anfang!
         const firmwareFile = `firmware-${deviceStore.selectedTarget.platformioTarget}-${firmwareVersion}.uf2`
         fileExistsOnServer.value = await checkIfRemoteFileExists(firmwareStore.getReleaseFileUrl(firmwareFile));
     }
     else if (deviceStore.selectedArchitecture.startsWith('esp32')) {
-        const firmwareFile = `firmware-${deviceStore.$state.selectedTarget.platformioTarget}-${firmwareStore.firmwareVersion}.bin`;
-        fileExistsOnServer.value = await checkIfRemoteFileExists(firmwareStore.getReleaseFileUrl(firmwareFile));
+        // BESSERER ANSATZ: Nutze direkt die Backend-URLs statt Dateinamen zu raten
+        if (firmwareStore.selectedFirmware?.bin_urls?.update) {
+            console.log('Using direct bin_url for preflight check');
+            fileExistsOnServer.value = await checkIfRemoteFileExists(firmwareStore.selectedFirmware.bin_urls.update);
+        } else {
+            // Fallback: Korrigiere die Dateinamen-Generierung
+            const firmwareFile = `firmware-${deviceStore.selectedTarget.platformioTarget}-${firmwareStore.selectedFirmware!.id}.bin`;
+            console.log(`Generated firmware filename: ${firmwareFile}`);
+            fileExistsOnServer.value = await checkIfRemoteFileExists(firmwareStore.getReleaseFileUrl(firmwareFile));
+        }
     }
     else {
         fileExistsOnServer.value = false;
