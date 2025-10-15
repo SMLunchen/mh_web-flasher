@@ -14,7 +14,6 @@ import {
   showPrerelease,
 } from '~/types/resources';
 
-import { track } from '@vercel/analytics';
 import { useSessionStorage } from '@vueuse/core';
 import {
   BlobReader,
@@ -30,8 +29,33 @@ import {
 } from '../types/api';
 import { createUrl } from './store';
 
-const previews = showPrerelease ? [currentPrerelease] : [];
+// ===== KONFIGURATION =====
+const USE_CUSTOM_FIRMWARE = true; // Auf true für eigene Firmware
+const DEVICE_FIRMWARE_MAPPING_PATH = 'https://flasher.schwarzes-seelenreich.de/backend/data/device-firmware-mapping.json';
 
+// Gerätespezifische Firmware - Alternative zu JSON
+const DEVICE_SPECIFIC_FIRMWARE: Record<string, FirmwareResource[]> = {
+  // Beispiel - könnt ihr anpassen oder komplett aus JSON laden
+  'TLORA_V2': [],
+  'TBEAM': [],
+  'HELTEC_V3': [
+  //{
+   //   "id": "v2.7.0",
+    //  "title": "Firmware 2.7.0 für Heltec",
+     // "page_url": "https://flasher.schwarzes-seelenreich.de/backend/firmware/heltecv3/v2.7.0/",
+  //    "created_at": "2024-01-15T00:00:00Z",
+//      "bin_urls": {
+  //      "update": "https://flasher.schwarzes-seelenreich.de/backend/firmware/heltec-v3/v2.7.0/firmware-heltecv3-2.7.0-update.bin",
+    //    "factory": "https://flasher.schwarzes-seelenreich.de/backend/firmware/heltec-v3/v2.7.0/firmware-heltecv3-2.7.0.factory.bin",
+      //  "ota": "https://flasher.schwarzes-seelenreich.de/backend/firmware/heltec-v3/v2.7.0/firmware-heltecv3-2.7.0-ota.bin",
+    //    "littlefs": "https://flasher.schwarzes-seelenreich.de/backend/firmware/tbeam/v2.7.0/littlefs-2.7.0.bin"
+    //  }
+   // }
+
+  ]
+};
+
+const previews = showPrerelease ? [currentPrerelease] : [];
 const firmwareApi = mande(createUrl('api/github/firmware/list'))
 
 export const useFirmwareStore = defineStore('firmware', {
@@ -58,6 +82,8 @@ export const useFirmwareStore = defineStore('firmware', {
       port: <SerialPort | undefined>{},
       couldntFetchFirmwareApi: false,
       prereleaseUnlocked: useSessionStorage('prereleaseUnlocked', false),
+      currentDeviceSlug: <string | undefined>undefined,
+      deviceFirmwareMapping: <Record<string, FirmwareResource[]>>{},
     }
   },
   getters: {
@@ -68,6 +94,11 @@ export const useFirmwareStore = defineStore('firmware', {
     canShowFlash: (state) => state.selectedFirmware?.id ? state.hasSeenReleaseNotes : true, 
     isZipFile: (state) => state.selectedFile?.name.endsWith('.zip'),
     isFactoryBin: (state) => state.selectedFile?.name.endsWith('.factory.bin'),
+    deviceSpecificFirmware: (state) => {
+      if (!state.currentDeviceSlug) return [];
+      return state.deviceFirmwareMapping[state.currentDeviceSlug] || 
+             DEVICE_SPECIFIC_FIRMWARE[state.currentDeviceSlug] || [];
+    },
   },
   actions: {
     clearState() {
@@ -80,51 +111,123 @@ export const useFirmwareStore = defineStore('firmware', {
     continueToFlash() {
       this.hasSeenReleaseNotes = true
     },
+    setCurrentDevice(deviceSlug: string) {
+      this.currentDeviceSlug = deviceSlug;
+      
+      if (Object.keys(this.deviceFirmwareMapping).length === 0) {
+        this.loadDeviceFirmwareMapping();
+      }
+      
+      const deviceFirmware = this.deviceFirmwareMapping[deviceSlug] || 
+                             DEVICE_SPECIFIC_FIRMWARE[deviceSlug] || [];
+      
+      if (USE_CUSTOM_FIRMWARE && deviceFirmware.length > 0) {
+        console.log(`Loading ${deviceFirmware.length} firmware versions for ${deviceSlug}`);
+        this.stable = deviceFirmware;
+        this.alpha = [];
+        this.previews = [];
+        this.pullRequests = [];
+      } else {
+        this.fetchList();
+      }
+    },
+    async loadDeviceFirmwareMapping() {
+      try {
+        const response = await fetch(DEVICE_FIRMWARE_MAPPING_PATH);
+        if (response.ok) {
+          this.deviceFirmwareMapping = await response.json();
+          console.log('Successfully loaded device firmware mapping');
+        }
+      } catch (error) {
+        console.warn('Could not load device firmware mapping:', error);
+        this.deviceFirmwareMapping = DEVICE_SPECIFIC_FIRMWARE;
+      }
+    },
     async fetchList() {
-      firmwareApi.get<FirmwareReleases>()
-        .then((response: FirmwareReleases) => {
-          // Only grab the latest 4 releases
-          this.stable = response.releases.stable.slice(0, 4);
-          this.alpha = response.releases.alpha.filter(f => !f.title.includes('Preview')).slice(0, 4);
-          this.previews = [
-            ...response.releases.alpha
-              .filter(f => f.title.includes('Preview') && !f.title.includes('2.6.0')) // Exclude 2.6.0 preview
-              .slice(0, 4),
-            ...previews
-          ];
-          this.pullRequests = response.pullRequests.slice(0, 4);
-        })
-        .catch((error) => {
-          console.error('Error fetching firmware list:', error);
-          this.couldntFetchFirmwareApi = true;
-        });
+      if (USE_CUSTOM_FIRMWARE && this.currentDeviceSlug && this.deviceSpecificFirmware.length > 0) {
+        console.log('Using device-specific firmware, skipping fetchList');
+        return;
+      }
+
+      try {
+        if (USE_CUSTOM_FIRMWARE) {
+          try {
+            console.log('Attempting to load custom firmware list from JSON');
+            const response = await fetch(DEVICE_FIRMWARE_MAPPING_PATH);
+            if (response.ok) {
+              const customFirmware = await response.json();
+              this.deviceFirmwareMapping = customFirmware;
+              console.log('Successfully loaded custom firmware list');
+              return;
+            }
+          } catch (jsonError) {
+            console.warn('Could not load custom firmware JSON, falling back to API:', jsonError);
+          }
+        }
+
+        console.log('Fetching firmware from Meshtastic API');
+        const response = await firmwareApi.get<FirmwareReleases>();
+        this.stable = response.releases.stable.slice(0, 4);
+        this.alpha = response.releases.alpha.filter(f => !f.title.includes('Preview')).slice(0, 4);
+        this.previews = [
+          ...response.releases.alpha
+            .filter(f => f.title.includes('Preview') && !f.title.includes('2.6.0'))
+            .slice(0, 4),
+          ...previews
+        ];
+        this.pullRequests = response.pullRequests.slice(0, 4);
+      } catch (error) {
+        console.error('Error fetching firmware list:', error);
+        this.couldntFetchFirmwareApi = true;
+      }
     },
     async setSelectedFirmware(firmware: FirmwareResource) {
       this.selectedFirmware = firmware;
       this.selectedFile = undefined;
       this.hasSeenReleaseNotes = false;
-      // Store current MUI setting before clearing state
       const currentMuiSetting = this.shouldInstallMui;
       this.clearState();
-      // Restore MUI setting if it was enabled (for devices that support it)
       this.shouldInstallMui = currentMuiSetting;
       
-      // Update Datadog RUM context with firmware version
-      if (import.meta.client) {
-        try {
-          const { datadogRum } = await import('@datadog/browser-rum');
-          datadogRum.setGlobalContextProperty('firmware_version', firmware.id);
-        } catch (error) {
-          console.error('Error setting Datadog RUM context:', error);
-        }
-      }
+      // Nur Console-Log, KEIN Tracking
+      console.log('Selected firmware:', firmware.id);
     },
     getReleaseFileUrl(fileName: string): string {
+      // Prüfe zuerst ob direkte BIN-URLs vorhanden sind
+      if (this.selectedFirmware?.bin_urls) {
+        if (fileName.includes('update.bin') && this.selectedFirmware.bin_urls.update) {
+          return this.selectedFirmware.bin_urls.update;
+        }
+        if (fileName.includes('factory.bin') && this.selectedFirmware.bin_urls.factory) {
+          return this.selectedFirmware.bin_urls.factory;
+        }
+        if (fileName.includes('ota.bin') && this.selectedFirmware.bin_urls.ota) {
+          return this.selectedFirmware.bin_urls.ota;
+        }
+        if (fileName.includes('littlefs') && this.selectedFirmware.bin_urls.littlefs) {
+          return this.selectedFirmware.bin_urls.littlefs;
+        }
+      }
+      
+      // Fallback zu ZIP
       if (!this.selectedFirmware?.zip_url) return '';
       const baseUrl = getCorsFriendyReleaseUrl(this.selectedFirmware.zip_url);
       return `${baseUrl}/${fileName}`;
     },
     async downloadUf2FileSystem(searchRegex: RegExp) {
+      // Prüfe ob direkte UF2-URL vorhanden ist
+      if (this.selectedFirmware?.uf2_urls) {
+        const uf2Url = this.selectedFirmware.uf2_urls.update || this.selectedFirmware.uf2_urls.full;
+        if (uf2Url) {
+          console.log(`Downloading UF2 from: ${uf2Url}`);
+          const response = await fetch(uf2Url);
+          const blob = await response.blob();
+          const fileName = uf2Url.split('/').pop() || 'firmware.uf2';
+          saveAs(blob, fileName);
+          return;
+        }
+      }
+      
       if (!this.selectedFile) return;
       const reader = new BlobReader(this.selectedFile);
       const zipReader = new ZipReader(reader);
@@ -147,10 +250,8 @@ export const useFirmwareStore = defineStore('firmware', {
     async setFirmwareFile(file: File) {
       this.selectedFile = file;
       this.selectedFirmware = undefined;
-      // Store current MUI setting before clearing state
       const currentMuiSetting = this.shouldInstallMui;
       this.clearState();
-      // Restore MUI setting if it was enabled (for devices that support it)
       this.shouldInstallMui = currentMuiSetting;
     },
     async updateEspFlash(fileName: string, selectedTarget: DeviceHardware) {
@@ -178,7 +279,7 @@ export const useFirmwareStore = defineStore('firmware', {
             if (written === total) {
               this.isFlashing = false;
               console.log('Done flashing!');
-              this.trackDownload(selectedTarget, true);
+              this.logFlash(selectedTarget, false); // Nur Logging
             }
           },
         };
@@ -207,53 +308,21 @@ export const useFirmwareStore = defineStore('firmware', {
       await new Promise((resolve) => setTimeout(resolve, 100));
       await transport.setRTS(false);
     },
-    trackDownload(selectedTarget: DeviceHardware, isCleanInstall: boolean) { 
-      if (selectedTarget.hwModelSlug?.length > 0) {
-        // Vercel Analytics tracking
-        track('Download', { 
-          hardwareModel: selectedTarget.hwModelSlug, 
-          arch: selectedTarget.architecture, 
-          cleanInstall: isCleanInstall,
-          version: this.selectedFirmware?.id || '',
-          count: 1 
-        });
-
-        // Datadog tracking - both RUM and Logs for comprehensive coverage
-        if (import.meta.client) {
-          const flashData = {
-            firmware_version: this.selectedFirmware?.id || '',
-            hw_model: selectedTarget.hwModel,
-            hw_model_slug: selectedTarget.hwModelSlug,
-            platformio_target: selectedTarget.platformioTarget,
-            architecture: selectedTarget.architecture,
-            clean_install: isCleanInstall,
-            support_level: selectedTarget.supportLevel || 3,
-            has_mui: selectedTarget.hasMui || false,
-            partition_scheme: this.partitionScheme || 'default',
-            partition_table_version: this.partitionScheme === '8MB' && selectedTarget.hasMui && supportsNew8MBPartitionTable(this.firmwareVersion) ? 'new-8mb' : 'legacy',
-            timestamp: new Date().toISOString(),
-            user_agent: navigator.userAgent,
-            url: window.location.href
-          };
-
-          // RUM Action (for user experience correlation, subject to sampling)
-          import('@datadog/browser-rum').then(({ datadogRum }) => {
-            datadogRum.addAction('firmware_flash', flashData);
-          }).catch(error => {
-            console.warn('Datadog RUM not available for flash tracking:', error);
-          });
-
-          // Datadog Logs (for precise counting, no sampling)
-          import('@datadog/browser-logs').then(({ datadogLogs }) => {
-            datadogLogs.logger.info('Firmware flash completed', {
-              event_type: 'firmware_flash',
-              ...flashData
-            });
-          }).catch(error => {
-            console.warn('Datadog Logs not available for flash tracking:', error);
-          });
-        }
-      }
+    // KOMPLETT NEUES logFlash - KEIN externes Tracking, nur Console
+    logFlash(selectedTarget: DeviceHardware, isCleanInstall: boolean) { 
+      const logData = {
+        timestamp: new Date().toISOString(),
+        hardware: selectedTarget.hwModelSlug || 'unknown',
+        hwModel: selectedTarget.hwModel,
+        platformioTarget: selectedTarget.platformioTarget,
+        architecture: selectedTarget.architecture,
+        firmware: this.selectedFirmware?.id || 'unknown',
+        cleanInstall: isCleanInstall,
+        partitionScheme: this.partitionScheme || 'default',
+      };
+      
+      // Nur Console-Log - nginx/docker loggt das automatisch
+      console.log('[FLASH]', JSON.stringify(logData));
     },
     async cleanInstallEspFlash(fileName: string, otaFileName: string, littleFsFileName: string, selectedTarget: DeviceHardware) {
       const terminal = await openTerminal();
@@ -274,28 +343,22 @@ export const useFirmwareStore = defineStore('firmware', {
         let spiffsOffset = 0x300000;
         
         if (this.partitionScheme == "8MB") {
-          // Check if this is a TFT (MUI) device with firmware 2.7.9+ that should use the new partition table
           const isTftDevice = selectedTarget.hasMui === true;
           const useNewPartitionTable = isTftDevice && supportsNew8MBPartitionTable(this.firmwareVersion);
           
           console.log(`8MB partition selection: TFT device: ${isTftDevice}, Firmware: ${this.firmwareVersion}, Use new table: ${useNewPartitionTable}`);
           
           if (useNewPartitionTable) {
-            // New 8MB partition table for TFT devices (firmware 2.7.9+)
-            // Based on: https://github.com/meshtastic/firmware/blob/d43bd7f45b1c19d95288b5589adda2c0ef117bc4/partition-table-8MB.csv
-            // flashApp (ota_1): 0x5D0000, spiffs: 0x670000
             otaOffset = 0x5D0000;
             spiffsOffset = 0x670000;
             console.log(`Using new 8MB partition table: OTA at 0x${otaOffset.toString(16)}, SPIFFS at 0x${spiffsOffset.toString(16)}`);
           } else {
-            // Legacy 8MB partition table
             otaOffset = 0x340000;
             spiffsOffset = 0x670000;
             console.log(`Using legacy 8MB partition table: OTA at 0x${otaOffset.toString(16)}, SPIFFS at 0x${spiffsOffset.toString(16)}`);
           }
         }
         else if (this.partitionScheme == "16MB") {
-          // 16mb
           otaOffset = 0x650000;
           spiffsOffset = 0xc90000;
         }
@@ -318,7 +381,7 @@ export const useFirmwareStore = defineStore('firmware', {
             if (written === total && fileIndex > 1) {
               this.isFlashing = false;
               console.log('Done flashing!');
-              this.trackDownload(selectedTarget, true);
+              this.logFlash(selectedTarget, true); // Nur Logging
             }
           },
         };
@@ -328,6 +391,33 @@ export const useFirmwareStore = defineStore('firmware', {
       }
     },
     async fetchBinaryContent(fileName: string): Promise<string> {
+      // Option 1: Direkte BIN-URL
+      if (this.selectedFirmware?.bin_urls) {
+        let binUrl: string | undefined;
+        
+        if (fileName.includes('update.bin')) {
+          binUrl = this.selectedFirmware.bin_urls.update;
+        } else if (fileName.includes('factory.bin') || fileName.includes('.factory.bin')) {
+          binUrl = this.selectedFirmware.bin_urls.factory;
+        } else if (fileName.includes('ota.bin') || fileName.includes('-ota.bin')) {
+          binUrl = this.selectedFirmware.bin_urls.ota;
+        } else if (fileName.includes('littlefs')) {
+          binUrl = this.selectedFirmware.bin_urls.littlefs;
+        }
+        
+        if (binUrl) {
+          console.log(`Loading BIN directly from: ${binUrl}`);
+          const response = await fetch(binUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch BIN file: ${response.statusText}`);
+          }
+          const blob = await response.blob();
+          const data = await blob.arrayBuffer();
+          return convertToBinaryString(new Uint8Array(data));
+        }
+      }
+      
+      // Option 2: Aus ZIP
       if (this.selectedFirmware?.zip_url) {
         const baseUrl = getCorsFriendyReleaseUrl(this.selectedFirmware.zip_url);
         const response = await fetch(`${baseUrl}/${fileName}`);
@@ -335,18 +425,19 @@ export const useFirmwareStore = defineStore('firmware', {
         const data = await blob.arrayBuffer();
         return convertToBinaryString(new Uint8Array(data));
       }
+      
+      // Option 3: Aus hochgeladener ZIP-Datei
       if (this.selectedFile && this.isZipFile) {
         const reader = new BlobReader(this.selectedFile);
         const zipReader = new ZipReader(reader);
         const entries = await zipReader.getEntries()
         console.log('Zip entries:', entries);
         console.log('Looking for file matching pattern:', fileName);
-        const file = entries.find(entry => 
-          {
-            if (fileName.startsWith('firmware-tbeam-.'))
-              return !entry.filename.includes('s3') && new RegExp(fileName).test(entry.filename) && (fileName.endsWith('update.bin') === entry.filename.endsWith('update.bin'))
-            return new RegExp(fileName).test(entry.filename) && (fileName.endsWith('update.bin') === entry.filename.endsWith('update.bin'))
-          })
+        const file = entries.find(entry => {
+          if (fileName.startsWith('firmware-tbeam-.'))
+            return !entry.filename.includes('s3') && new RegExp(fileName).test(entry.filename) && (fileName.endsWith('update.bin') === entry.filename.endsWith('update.bin'))
+          return new RegExp(fileName).test(entry.filename) && (fileName.endsWith('update.bin') === entry.filename.endsWith('update.bin'))
+        })
         if (file) {
           console.log('Found file:', file.filename);
           if (file?.getData) {
@@ -357,9 +448,11 @@ export const useFirmwareStore = defineStore('firmware', {
           throw new Error(`Could not find file with pattern ${fileName} in zip`);
         }
       } else if (this.selectedFile && !this.isZipFile) {
+        // Option 4: Direkte BIN hochgeladen
         const buffer = await this.selectedFile.arrayBuffer();
         return convertToBinaryString(new Uint8Array(buffer));
       }
+      
       throw new Error('Cannot fetch binary content without a file or firmware selected');
     },
     async connectEsp32(transport: Transport, terminal: Terminal): Promise<ESPLoader> {

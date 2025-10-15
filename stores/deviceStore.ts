@@ -7,13 +7,44 @@ import {
 import { MeshDevice } from '@meshtastic/core';
 import { TransportWebSerial } from '@meshtastic/transport-web-serial';
 
-// biome-ignore lint/style/useImportType: WUT?
 import { type DeviceHardware } from '../types/api';
 import { createUrl } from './store';
 import { useFirmwareStore } from './firmwareStore';
 import { useToastStore } from './toastStore';
 
-// Ensure Web Serial API types are available
+// ===== KONFIGURATION =====
+const USE_CUSTOM_HARDWARE_LIST = false; // true für eigene Hardware-Liste
+const CUSTOM_HARDWARE_JSON_PATH = 'https://flasher.schwarzes-seelenreich.de/backend/data/custom-hardware-list.json';
+
+// Eigene Hardware-Liste - Alternative zu JSON
+const CUSTOM_HARDWARE_LIST: DeviceHardware[] = [
+  // Beispiele - könnt ihr anpassen
+  {
+    hwModel: 1,
+    hwModelSlug: "TLORA_V2",
+    platformioTarget: "tlora-v2",
+    architecture: "esp32",
+    activelySupported: true,
+    displayName: "TTGO LoRa V2",
+    tags: ["esp32", "custom"],
+    supportLevel: 1,
+    images: [],
+    hasMui: false
+  },
+  {
+    hwModel: 2,
+    hwModelSlug: "TBEAM",
+    platformioTarget: "tbeam",
+    architecture: "esp32",
+    activelySupported: true,
+    displayName: "TTGO T-Beam",
+    tags: ["esp32", "custom"],
+    supportLevel: 1,
+    images: [],
+    hasMui: false
+  }
+];
+
 declare global {
   interface Navigator {
     serial: any;
@@ -98,12 +129,35 @@ export const useDeviceStore = defineStore("device", {
   actions: {
     async fetchList() {
       try {
-        // First try to fetch from the API
+        // Option 1: Hart-codierte eigene Liste
+        if (USE_CUSTOM_HARDWARE_LIST) {
+          console.log('Using custom hardcoded hardware list');
+          this.setTargetsList(CUSTOM_HARDWARE_LIST);
+          return;
+        }
+
+        // Option 2: Lade eigene Liste aus JSON
+        try {
+          console.log('Attempting to load custom hardware list from JSON');
+          const response = await fetch(CUSTOM_HARDWARE_JSON_PATH);
+          if (response.ok) {
+            const customHardwareList = await response.json();
+            this.setTargetsList(customHardwareList);
+            console.log('Successfully loaded custom hardware list from JSON');
+            return;
+          }
+        } catch (jsonError) {
+          console.warn('Could not load custom hardware JSON, falling back to API:', jsonError);
+        }
+
+        // Option 3: Fallback zur Meshtastic API
+        console.log('Falling back to Meshtastic API');
         const targets = await firmwareApi.get<DeviceHardware[]>();
         this.setTargetsList(targets);
       } catch (ex) {
-        console.error(ex);
-        // Fallback to offline list from the JSON file
+        console.error('Error fetching hardware list from API:', ex);
+        
+        // Final Fallback: Original offline list
         try {
           const response = await fetch('/data/hardware-list.json');
           if (response.ok) {
@@ -134,26 +188,30 @@ export const useDeviceStore = defineStore("device", {
       document.getElementById('device-modal')?.click();
       const firmwareStore = useFirmwareStore();
 
+      // Gerät im firmwareStore setzen für gerätespezifische Firmware
+      firmwareStore.setCurrentDevice(target.hwModelSlug || target.platformioTarget);
+
       await new Promise((_) => setTimeout(_, 250));
-      if (!firmwareStore.hasFirmwareFile && !firmwareStore.hasOnlineFirmware && firmwareStore.stable.length > 0) {
+      
+      // Prüfe ob gerätespezifische Firmware vorhanden ist
+      if (firmwareStore.deviceSpecificFirmware.length > 0) {
+        firmwareStore.setSelectedFirmware(firmwareStore.deviceSpecificFirmware[0]);
+      } else if (!firmwareStore.hasFirmwareFile && !firmwareStore.hasOnlineFirmware && firmwareStore.stable.length > 0) {
         firmwareStore.setSelectedFirmware(firmwareStore.stable[0]);
       }
 
-      // Auto-select MUI for devices that support it
+      // Auto-select MUI für Geräte die es unterstützen
       if (target.hasMui === true) {
         firmwareStore.$state.shouldInstallMui = true;
       }
       
-      // Update Datadog RUM context with hardware model and platformio target
-      if (import.meta.client) {
-        try {
-          const { datadogRum } = await import('@datadog/browser-rum');
-          datadogRum.setGlobalContextProperty('hwModel', target.hwModel);
-          datadogRum.setGlobalContextProperty('platformioTarget', target.platformioTarget);
-        } catch (error) {
-          // Datadog RUM not available, silently continue
-        }
-      }
+      // Nur Console-Log - KEIN externes Tracking
+      console.log('Selected target:', {
+        hwModel: target.hwModel,
+        hwModelSlug: target.hwModelSlug,
+        platformioTarget: target.platformioTarget,
+        architecture: target.architecture
+      });
     },
     setSelectedTag(tag: string) {
       if (tag === "all") {
@@ -167,15 +225,11 @@ export const useDeviceStore = defineStore("device", {
       }
     },
     async openDeviceConnection(shouldConfigure: boolean = true): Promise<MeshDevice> {
-      // Request serial port from user
       this.port = await navigator.serial.requestPort();
-
-      // Create transport and device using the new API
       const transport = await TransportWebSerial.createFromPort(this.port!, 115200);
       const id = Math.floor(Math.random() * 1e9);
       const device = new MeshDevice(transport, id);
 
-      // Configure the device connection
       if (shouldConfigure) {
         await device.configure();
       }
@@ -187,12 +241,12 @@ export const useDeviceStore = defineStore("device", {
 
       if (this.port && device?.transport?.fromDevice) {
         try {
-          await device.transport.fromDevice.cancel(); // Cancel any ongoing reads
+          await device.transport.fromDevice.cancel();
           } catch (error) {
             console.warn('Error cancelling fromDevice reader:', error);
           }
           try {
-            await device.transport.toDevice.close(); // Close the toDevice stream
+            await device.transport.toDevice.close();
           } catch (error) {
             console.warn('Error closing toDevice writer:', error);
           }
@@ -208,7 +262,6 @@ export const useDeviceStore = defineStore("device", {
             await writer.close();
             await writableStreamClosed;
             
-            // this is the secret sauce!
             await this.port?.forget();
             
           } catch (error: any) {
@@ -219,7 +272,6 @@ export const useDeviceStore = defineStore("device", {
           }
         } 
         
-      // Clear any store state
       this.abortController = undefined;
       this.readerClosed = undefined;
       this.writerClosed = undefined;
@@ -230,8 +282,6 @@ export const useDeviceStore = defineStore("device", {
       
       this.isConnecting = true;
       try {
-        // Configure the device so transport streams are properly set up
-// Promise.race for connection timeout
         const connectionPromise = this.openDeviceConnection(false);
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('timeout')), 5000)
@@ -251,7 +301,6 @@ export const useDeviceStore = defineStore("device", {
         }
         device.events.onMyNodeInfo.subscribe((info) => {
           console.log("Received MyNodeInfo event:", info);
-          // Handle the event as needed
           device?.enterDfuMode();
         });
         try {
@@ -265,7 +314,6 @@ export const useDeviceStore = defineStore("device", {
         }
         await device.enterDfuMode();
 
-        // Show success message
         const successTitle = tFunc?.('dfu.success_title') || 'DFU Mode';
         const successMessage = tFunc?.('dfu.success_message') || 'Device successfully entered DFU mode';
         toastStore.success(successTitle, successMessage);
@@ -279,7 +327,6 @@ export const useDeviceStore = defineStore("device", {
         toastStore.error(errorTitle, errorMessage);
         throw error;
       } finally {
-        // Always attempt to clean up the device connection
         if (device) {
           await this.cleanupDevice(device);
         }
@@ -289,7 +336,6 @@ export const useDeviceStore = defineStore("device", {
     async baud1200() {
       this.port = await navigator.serial.requestPort();
       await this.port?.open({ baudRate: 1200 });
-      // Give the device a moment to recognize the 1200 baud connection
       await new Promise((resolve) => setTimeout(resolve, 500));
       await this.port?.close();
     },
@@ -297,7 +343,6 @@ export const useDeviceStore = defineStore("device", {
       const toastStore = useToastStore();
       this.isConnecting = true;
       try {
-        // Promise.race for connection timeout
         const connectionPromise = this.openDeviceConnection(false);
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('timeout')), 5000)
@@ -317,7 +362,6 @@ export const useDeviceStore = defineStore("device", {
         }
         device.events.onDeviceMetadataPacket.subscribe(async (packet: any) => {
           console.log("Received device metadata packet:", packet);
-          // Try to find the device by pio env name first, then hw model if that fails
           let targetDevice: DeviceHardware | undefined = undefined;
           if (packet?.data?.platformioTarget?.length > 0) {
             targetDevice = this.targets.find(
@@ -363,10 +407,7 @@ export const useDeviceStore = defineStore("device", {
           }
         }
 
-
-        // Wait for device metadata, then clean up
         await new Promise((resolve) => setTimeout(resolve, 5000));
-
         await this.cleanupDevice(device);
 
         return -1;

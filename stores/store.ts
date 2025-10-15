@@ -1,3 +1,4 @@
+
 export function createUrl(relativeUrl: string) {
     let host = window.location.host;
     if (process.env.NODE_ENV !== 'development' && relativeUrl.startsWith('api')) {
