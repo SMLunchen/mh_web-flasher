@@ -65,15 +65,26 @@
                         </label>
                     </li>
                 </ol>
-
                 <div v-if="firmwareStore.canShowFlash">
-                    <a :href="downloadUf2FileUrl" v-if="firmwareStore.selectedFirmware?.id"
-                    class="text-black inline-flex w-full justify-center bg-meshtastic hover:bg-gray-200 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center">
-                    {{ $t('flash.uf2.download_uf2') }}
-                    </a>
-                    <button @click="downloadUf2FileFs" v-else
+                    <!-- Custom Firmware: Direkte UF2-Download -->
+                    <button v-if="firmwareStore.selectedFirmware?.bin_urls" @click="downloadCustomUf2"
+                        :disabled="isDownloading"
+                        class="text-black inline-flex w-full justify-center bg-meshtastic hover:bg-gray-200 disabled:bg-gray-400 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center">
+                        <span v-if="isDownloading">📥 {{ $t('flash.uf2.downloading') }}...</span>
+                        <span v-else>📥 {{ $t('flash.uf2.download_uf2') }}</span>
+                    </button>
+                    
+                    <!-- Standard Meshtastic Firmware: Link-Download -->
+                    <a v-else-if="firmwareStore.selectedFirmware?.id" :href="downloadUf2FileUrl"
+                        @click="handleLinkClick"
                         class="text-black inline-flex w-full justify-center bg-meshtastic hover:bg-gray-200 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center">
-                        {{ $t('flash.uf2.download_uf2') }}
+                        📥 {{ $t('flash.uf2.download_uf2') }}
+                    </a>
+                    
+                    <!-- ZIP-Datei: FileSystem-Download -->
+                    <button v-else @click="downloadUf2FileFs"
+                        class="text-black inline-flex w-full justify-center bg-meshtastic hover:bg-gray-200 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center">
+                        📥 {{ $t('flash.uf2.download_uf2') }}
                     </button>
                 </div>
             </div>
@@ -86,9 +97,7 @@ import {
   FolderDown,
   Info,
 } from 'lucide-vue-next';
-import { track } from '@vercel/analytics';
-import { computed } from 'vue';
-
+import { computed, ref } from 'vue';
 import { useDeviceStore } from '../../stores/deviceStore';
 import { useFirmwareStore } from '../../stores/firmwareStore';
 import FlashHeader from './FlashHeader.vue';
@@ -97,38 +106,84 @@ import ReleaseNotes from './ReleaseNotes.vue';
 const deviceStore = useDeviceStore();
 const firmwareStore = useFirmwareStore();
 
+const isDownloading = ref(false);
+
+// Custom UF2-Download für deine Firmware
+const downloadCustomUf2 = async () => {
+    if (!deviceStore.selectedTarget || !firmwareStore.selectedFirmware) {
+        console.error('❌ No target or firmware selected');
+        return;
+    }
+    
+    try {
+        isDownloading.value = true;
+        console.log('🔧 Starting custom UF2 download...');
+        
+        // Log the flash action
+        firmwareStore.logFlash(deviceStore.selectedTarget, false);
+        
+        // Verwende die neue downloadUf2Firmware Methode
+        await firmwareStore.downloadUf2Firmware(deviceStore.selectedTarget);
+        
+        console.log('✅ Custom UF2 download completed');
+        
+    } catch (error) {
+        console.error('❌ Custom UF2 download failed:', error);
+    } finally {
+        isDownloading.value = false;
+    }
+};
+
+// ZIP-Datei UF2-Download (bestehende Funktionalität)
 const downloadUf2FileFs = () => {
     let suffix = "";
     if (firmwareStore.shouldInstallInkHud) {
         suffix = "-inkhud";
     }
-    const searchRegex = new RegExp(`firmware-${deviceStore.$state.selectedTarget.platformioTarget}${suffix}-.+.uf2`);
-    console.log(searchRegex);
+    
+    const searchRegex = new RegExp(`firmware-${deviceStore.selectedTarget.platformioTarget}${suffix}-.+.uf2`);
+    console.log('🔍 Searching for UF2 in ZIP:', searchRegex);
+    
+    // Log the flash action
+    firmwareStore.logFlash(deviceStore.selectedTarget, false);
+    
     firmwareStore.downloadUf2FileSystem(searchRegex);
-}
+};
+
+// Standard Meshtastic Link-Handler
+const handleLinkClick = () => {
+    console.log('🔗 Standard UF2 link clicked');
+    
+    // Log the flash action
+    if (deviceStore.selectedTarget) {
+        firmwareStore.logFlash(deviceStore.selectedTarget, false);
+    }
+};
 
 const isNewFirmware = computed(() => {
-    // Just check for *not* 2.5 firmware version for now
+    // Check for _not_ 2.5 firmware version
     return !firmwareStore.firmwareVersion.includes('2.5');
 });
 
 const canInstallInkHud = computed(() => {
-    if (!isNewFirmware.value)
-        return false;
-    return deviceStore.$state.selectedTarget.hasInkHud === true;
+    if (!isNewFirmware.value) return false;
+    return deviceStore.selectedTarget?.hasInkHud === true;
 });
 
-
+// Standard Meshtastic UF2-URL (für Links)
 const downloadUf2FileUrl = computed(() => {
     if (!firmwareStore.selectedFirmware?.id) return '';
-    const firmwareVersion = firmwareStore.selectedFirmware.id.replace('v', '')
+    
+    const firmwareVersion = firmwareStore.selectedFirmware.id.replace(/^v/, ''); // Nur am Anfang!
     let suffix = "";
+    
     if (firmwareStore.shouldInstallInkHud) {
         suffix = "-inkhud";
     }
-    const firmwareFile = `firmware-${deviceStore.$state.selectedTarget.platformioTarget}${suffix}-${firmwareVersion}.uf2`
-    firmwareStore.trackDownload(deviceStore.$state.selectedTarget, false);
-    console.log(firmwareFile);
+    
+    const firmwareFile = `firmware-${deviceStore.selectedTarget.platformioTarget}${suffix}-${firmwareVersion}.uf2`;
+    console.log('🔗 Standard UF2 file:', firmwareFile);
+    
     return firmwareStore.getReleaseFileUrl(firmwareFile);
 });
 </script>
