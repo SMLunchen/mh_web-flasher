@@ -95,10 +95,22 @@ export const useFirmwareStore = defineStore('firmware', {
 },
     isZipFile: (state) => state.selectedFile?.name.endsWith('.zip'),
     isFactoryBin: (state) => state.selectedFile?.name.endsWith('.factory.bin'),
+    //shows all FW
+    //deviceSpecificFirmware: (state) => {
+    //  if (!state.currentDeviceSlug) return [];
+    //  return state.deviceFirmwareMapping[state.currentDeviceSlug] || 
+    //         DEVICE_SPECIFIC_FIRMWARE[state.currentDeviceSlug] || [];
+    //},
+    
+    // SHOW ONLY 4 FWs
     deviceSpecificFirmware: (state) => {
-      if (!state.currentDeviceSlug) return [];
-      return state.deviceFirmwareMapping[state.currentDeviceSlug] || 
-             DEVICE_SPECIFIC_FIRMWARE[state.currentDeviceSlug] || [];
+    if (!state.currentDeviceSlug) return [];
+
+    const deviceFirmware = state.deviceFirmwareMapping[state.currentDeviceSlug] ||
+                          DEVICE_SPECIFIC_FIRMWARE[state.currentDeviceSlug] || [];
+
+    // Nur die neuesten 4 anzeigen
+    return deviceFirmware.slice(0, 4);
     },
   },
   actions: {
