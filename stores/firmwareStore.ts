@@ -102,15 +102,15 @@ export const useFirmwareStore = defineStore('firmware', {
     //         DEVICE_SPECIFIC_FIRMWARE[state.currentDeviceSlug] || [];
     //},
     
-    // SHOW ONLY 4 FWs
+    // SHOW ONLY 5 FWs
     deviceSpecificFirmware: (state) => {
     if (!state.currentDeviceSlug) return [];
 
     const deviceFirmware = state.deviceFirmwareMapping[state.currentDeviceSlug] ||
                           DEVICE_SPECIFIC_FIRMWARE[state.currentDeviceSlug] || [];
 
-    // Nur die neuesten 4 anzeigen
-    return deviceFirmware.slice(0, 4);
+    // Nur die neuesten 5 anzeigen
+    return deviceFirmware.slice(0, 5);
     },
   },
   actions: {
