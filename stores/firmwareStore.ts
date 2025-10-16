@@ -38,21 +38,11 @@ const DEVICE_SPECIFIC_FIRMWARE: Record<string, FirmwareResource[]> = {
   // Beispiel - könnt ihr anpassen oder komplett aus JSON laden
   'TLORA_V2': [],
   'TBEAM': [],
-  'HELTEC_V3': [
-  //{
-   //   "id": "v2.7.0",
-    //  "title": "Firmware 2.7.0 für Heltec",
-     // "page_url": "https://flasher.schwarzes-seelenreich.de/backend/firmware/heltecv3/v2.7.0/",
-  //    "created_at": "2024-01-15T00:00:00Z",
-//      "bin_urls": {
-  //      "update": "https://flasher.schwarzes-seelenreich.de/backend/firmware/heltec-v3/v2.7.0/firmware-heltecv3-2.7.0-update.bin",
-    //    "factory": "https://flasher.schwarzes-seelenreich.de/backend/firmware/heltec-v3/v2.7.0/firmware-heltecv3-2.7.0.factory.bin",
-      //  "ota": "https://flasher.schwarzes-seelenreich.de/backend/firmware/heltec-v3/v2.7.0/firmware-heltecv3-2.7.0-ota.bin",
-    //    "littlefs": "https://flasher.schwarzes-seelenreich.de/backend/firmware/tbeam/v2.7.0/littlefs-2.7.0.bin"
-    //  }
-   // }
-
-  ]
+  'HELTEC_TRACKER': [],
+  'HELTEC_V3': [],
+  'HELTEC_WIRELESS_TRACKER': [],
+  'RAK4631': [],
+  'HELTEC_V4': []
 };
 
 const previews = showPrerelease ? [currentPrerelease] : [];
